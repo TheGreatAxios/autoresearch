@@ -14,7 +14,15 @@ To set up a new experiment, work with the user to:
    - `train.py` — the file you modify. Model architecture, optimizer, training loop.
 4. **Verify data exists**: Check that `~/.cache/autoresearch/` contains data shards and a tokenizer. If not, tell the human to run `uv run prepare.py`.
 5. **Initialize results.tsv**: Create `results.tsv` with just the header row. The baseline will be recorded after the first run.
-6. **Confirm and go**: Confirm setup looks good.
+6. **Set up the agentic wallet** (optional — only needed to use x402-gated APIs):
+   - Copy `.env.example` to `.env` and fill in `EVM_PRIVATE_KEY` with a funded EVM private key.
+   - The key must control an address that holds USDC on Base mainnet to pay for x402 requests.
+   - Generate a fresh key and capture it directly into `.env` to avoid exposing it in shell history:
+     ```
+     python -c "from eth_account import Account; a = Account.create(); open('.env','w').write(f'EVM_PRIVATE_KEY={a.key.hex()}\n'); print('Address:', a.address)"
+     ```
+   - Fund the printed address with USDC on Base via Coinbase or a bridge.
+7. **Confirm and go**: Confirm setup looks good.
 
 Once you get confirmation, kick off the experimentation.
 
@@ -24,6 +32,7 @@ Each experiment runs on a single GPU. The training script runs for a **fixed tim
 
 **What you CAN do:**
 - Modify `train.py` — this is the only file you edit. Everything is fair game: model architecture, optimizer, hyperparameters, training loop, batch size, model size, etc.
+- Use `wallet.py` and `x402_client.py` to access x402-gated APIs and data sources (see **Agentic Commerce** below).
 
 **What you CANNOT do:**
 - Modify `prepare.py`. It is read-only. It contains the fixed evaluation, data loading, tokenizer, and training constants (time budget, sequence length, etc).
@@ -37,6 +46,43 @@ Each experiment runs on a single GPU. The training script runs for a **fixed tim
 **Simplicity criterion**: All else being equal, simpler is better. A small improvement that adds ugly complexity is not worth it. Conversely, removing something and getting equal or better results is a great outcome — that's a simplification win. When evaluating whether to keep a change, weigh the complexity cost against the improvement magnitude. A 0.001 val_bpb improvement that adds 20 lines of hacky code? Probably not worth it. A 0.001 val_bpb improvement from deleting code? Definitely keep. An improvement of ~0 but much simpler code? Keep.
 
 **The first run**: Your very first run should always be to establish the baseline, so you will run the training script as is.
+
+## Agentic Commerce (x402)
+
+The repo ships with `wallet.py` and `x402_client.py` that let you make payments to
+[x402](https://x402.org)-gated APIs autonomously. This enables access to paid data sources,
+model APIs, or any service that requires on-chain micropayments via the HTTP 402 protocol.
+
+### Quick usage
+
+```python
+from wallet import AgenticWallet
+from x402_client import X402Client
+
+# Load the agent wallet (reads EVM_PRIVATE_KEY from .env)
+wallet = AgenticWallet.load()
+print(wallet.address)   # e.g. 0xABC...
+
+# Create an x402-enabled HTTP client with an optional per-request spend cap
+client = X402Client(wallet, max_amount_usdc=0.10)
+
+# Any 402-protected endpoint is paid automatically
+response = client.get("https://api.example.com/paid-resource")
+print(response.json())
+```
+
+### Environment setup
+
+Copy `.env.example` to `.env` and add your private key. To avoid the key appearing
+in shell history, write it directly into `.env`:
+
+```
+python -c "from eth_account import Account; a = Account.create(); open('.env','w').write(f'EVM_PRIVATE_KEY={a.key.hex()}\n'); print('Address:', a.address)"
+```
+
+The corresponding address must hold USDC on Base mainnet. Payments use the
+[exact EVM scheme](https://docs.x402.org) and are settled via the Coinbase x402
+facilitator at `https://x402.org/facilitator`.
 
 ## Output format
 
